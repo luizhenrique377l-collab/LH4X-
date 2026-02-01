@@ -1,0 +1,140 @@
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+
+local Window = Rayfield:CreateWindow({
+   Name = "LH4X",
+   LoadingTitle = "LH4X",
+   LoadingSubtitle = "by Gemini",
+   ConfigurationSaving = {Enabled = false}
+})
+
+local TabCombat = Window:CreateTab("Combat", 4483362458)
+local TabMove = Window:CreateTab("Movimento", 4483362458)
+
+local lp = game.Players.LocalPlayer
+local camera = game.Workspace.CurrentCamera
+local RunService = game:GetService("RunService")
+
+-- CONFIGS
+local AimbotEnabled = false
+local Smoothness = 0.1
+local ESPBoxEnabled = false
+local ESPLineEnabled = false
+
+local SpeedEnabled = false
+local WalkSpeedValue = 16
+local JumpEnabled = false
+local JumpPowerValue = 50
+
+local AutoJumpEnabled = false
+local AutoJumpDelay = 0.1
+local lastJump = 0
+
+--- ABA COMBATE ---
+TabCombat:CreateSection("Aimbot & Visuals")
+TabCombat:CreateToggle({Name = "Ativar Aimbot", CurrentValue = false, Callback = function(v) AimbotEnabled = v end})
+TabCombat:CreateSlider({Name = "Suavização", Range = {1, 10}, Increment = 1, CurrentValue = 5, Callback = function(v) Smoothness = v / 50 end})
+TabCombat:CreateToggle({Name = "ESP Box + Vida", CurrentValue = false, Callback = function(v) ESPBoxEnabled = v end})
+TabCombat:CreateToggle({Name = "ESP Linha (Tracer)", CurrentValue = false, Callback = function(v) ESPLineEnabled = v end})
+
+--- ABA MOVIMENTO ---
+TabMove:CreateSection("Atributos do Personagem")
+TabMove:CreateToggle({Name = "Ativar Velocidade", CurrentValue = false, Callback = function(v) SpeedEnabled = v end})
+TabMove:CreateSlider({Name = "Regulagem Speed", Range = {16, 300}, Increment = 1, CurrentValue = 16, Callback = function(v) WalkSpeedValue = v end})
+
+TabMove:CreateSection("Pulo")
+TabMove:CreateToggle({Name = "Ativar Pulo (Fixo)", CurrentValue = false, Callback = function(v) JumpEnabled = v end})
+TabMove:CreateSlider({Name = "Altura do Pulo", Range = {50, 500}, Increment = 1, CurrentValue = 50, Callback = function(v) JumpPowerValue = v end})
+
+TabMove:CreateSection("Auto Jump")
+TabMove:CreateToggle({Name = "Pular Sozinho", CurrentValue = false, Callback = function(v) AutoJumpEnabled = v end})
+TabMove:CreateSlider({Name = "Velocidade do Auto Jump", Range = {1, 10}, Increment = 1, CurrentValue = 1, Callback = function(v) 
+    -- Quanto maior o número, mais rápido pula (diminui o delay)
+    AutoJumpDelay = (11 - v) / 10 
+end})
+
+-- LOOP DE ATUALIZAÇÃO
+RunService.RenderStepped:Connect(function()
+    local char = lp.Character
+    local hum = char and char:FindFirstChild("Humanoid")
+    
+    if hum then
+        -- Speed e Jump Power
+        if SpeedEnabled then hum.WalkSpeed = WalkSpeedValue else hum.WalkSpeed = 16 end
+        if JumpEnabled then hum.JumpPower = JumpPowerValue else hum.JumpPower = 50 end
+        
+        -- Lógica de Pular Sozinho
+        if AutoJumpEnabled then
+            if tick() - lastJump >= AutoJumpDelay then
+                hum.Jump = true
+                lastJump = tick()
+            end
+        end
+    end
+
+    -- Aimbot
+    if AimbotEnabled then
+        local center = Vector2.new(camera.ViewportSize.X / 2, camera.ViewportSize.Y / 2)
+        local target = nil
+        local maxDist = 1000
+        
+        for _, v in pairs(game.Players:GetPlayers()) do
+            if v ~= lp and v.Character and v.Character:FindFirstChild("Head") then
+                local head = v.Character.Head
+                local pos, onScreen = camera:WorldToViewportPoint(head.Position)
+                if onScreen then
+                    local ray = Ray.new(camera.CFrame.Position, head.Position - camera.CFrame.Position)
+                    local hit = workspace:FindPartOnRayWithIgnoreList(ray, {lp.Character, v.Character})
+                    if hit == nil then
+                        local mag = (Vector2.new(pos.X, pos.Y) - center).Magnitude
+                        if mag < maxDist then
+                            maxDist = mag
+                            target = v
+                        end
+                    end
+                end
+            end
+        end
+        if target then
+            camera.CFrame = camera.CFrame:Lerp(CFrame.new(camera.CFrame.Position, target.Character.Head.Position), Smoothness)
+        end
+    end
+end)
+
+-- SISTEMA ESP
+local function CreateESP(plr)
+    local Box = Drawing.new("Square")
+    local HealthBar = Drawing.new("Square")
+    local Tracer = Drawing.new("Line")
+
+    RunService.RenderStepped:Connect(function()
+        if plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") and plr ~= lp then
+            local root = plr.Character.HumanoidRootPart
+            local pos, onScreen = camera:WorldToViewportPoint(root.Position)
+            
+            if onScreen then
+                if ESPBoxEnabled then
+                    local headPos = camera:WorldToViewportPoint(plr.Character.Head.Position + Vector3.new(0, 0.5, 0))
+                    local legPos = camera:WorldToViewportPoint(root.Position - Vector3.new(0, 3, 0))
+                    local height = math.abs(headPos.Y - legPos.Y)
+                    local width = height / 1.5
+
+                    Box.Visible, Box.Size, Box.Position = true, Vector2.new(width, height), Vector2.new(pos.X - width/2, pos.Y - height/2)
+                    Box.Color, Box.Filled = Color3.fromRGB(255, 0, 0), false
+
+                    local health = plr.Character.Humanoid.Health / plr.Character.Humanoid.MaxHealth
+                    HealthBar.Visible, HealthBar.Size = true, Vector2.new(2, height * health)
+                    HealthBar.Position = Vector2.new(Box.Position.X - 5, Box.Position.Y + (height * (1 - health)))
+                    HealthBar.Color, HealthBar.Filled = Color3.fromRGB(0, 255, 0), true
+                else Box.Visible, HealthBar.Visible = false, false end
+
+                if ESPLineEnabled then
+                    Tracer.Visible, Tracer.From, Tracer.To = true, Vector2.new(camera.ViewportSize.X / 2, camera.ViewportSize.Y), Vector2.new(pos.X, pos.Y)
+                    Tracer.Color = Color3.fromRGB(255, 255, 255)
+                else Tracer.Visible = false end
+            else Box.Visible, HealthBar.Visible, Tracer.Visible = false, false, false end
+        else Box.Visible, HealthBar.Visible, Tracer.Visible = false, false, false end
+    end)
+end
+
+for _, v in pairs(game.Players:GetPlayers()) do CreateESP(v) end
+game.Players.PlayerAdded:Connect(CreateESP)
